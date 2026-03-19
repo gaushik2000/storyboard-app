@@ -37,7 +37,7 @@ const callClaude = async (userMessage) => {
     method: "POST",
     headers: {
   "Content-Type": "application/json",
-  "x-api-key": "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",
+  "x-api-key": "",
   "anthropic-version": "2023-06-01",
   "anthropic-dangerous-direct-browser-access": "true",
 },
