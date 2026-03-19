@@ -411,3 +411,4 @@ function EditPanel({ scene, onChange, onSave, onCancel }) {
         </div>
       </div>
       <FormField label="Scene Title" value={scene.sceneTitle} onChange={v=>onChange("sceneTitle",v)
+export default function StoryboardApp() { ... }
