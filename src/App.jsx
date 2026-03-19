@@ -35,7 +35,12 @@ Return ONLY a valid JSON array. No markdown, no explanation. Analyze carefully a
 const callClaude = async (userMessage) => {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+  "Content-Type": "application/json",
+  "x-api-key": "YOUR-ANTHROPIC-API-KEY-HERE",
+  "anthropic-version": "2023-06-01",
+  "anthropic-dangerous-direct-browser-access": "true",
+},
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 8000,
