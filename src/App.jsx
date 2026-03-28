@@ -36,11 +36,11 @@ const callClaude = async (userMessage) => {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-  "Content-Type": "application/json",
-  "x-api-key": "AIzaSyCzcIe72425u5AIlHpjxt8OuKq_o6fa3AA",
-  "anthropic-version": "2023-06-01",
-  "anthropic-dangerous-direct-browser-access": "true",
-},
+      "Content-Type": "application/json",
+      "x-api-key": "...",
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 8000,
@@ -54,6 +54,17 @@ const callClaude = async (userMessage) => {
   const clean = text.replace(/```json\n?|```\n?/g, "").trim();
   return JSON.parse(clean);
 };
+```
+
+**Replace the whole thing** with the new Gemini version above.
+
+---
+
+## Put Your Google Key In
+
+In the new code find this part:
+```
+?key=YOUR-GOOGLE-AI-STUDIO-KEY
 
 const moodColor = (mood) => {
   const map = {
