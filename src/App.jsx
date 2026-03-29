@@ -32,39 +32,36 @@ Break the story into individual scenes. For EACH scene return a JSON object with
 
 Return ONLY a valid JSON array. No markdown, no explanation. Analyze carefully and do not skip any important story moments.`;
 
-const callClaude = async (userMessage) => {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": "...",
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
-    }),
-  });
-  if (!response.ok) throw new Error(`API error: ${response.status}`);
+const callGemini = async (userMessage, apiKey) => {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: SYSTEM_PROMPT + "\n\n" + userMessage }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 8000,
+        },
+      }),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`API error ${response.status}: ${err?.error?.message || "Unknown error"}`);
+  }
   const data = await response.json();
-  const text = data.content.map(b => b.text || "").join("\n");
+  const text = data.candidates[0].content.parts[0].text;
   const clean = text.replace(/```json\n?|```\n?/g, "").trim();
   return JSON.parse(clean);
 };
-```
-
-**Replace the whole thing** with the new Gemini version above.
-
----
-
-## Put Your Google Key In
-
-In the new code find this part:
-```
-?key=YOUR-GOOGLE-AI-STUDIO-KEY
 
 const moodColor = (mood) => {
   const map = {
@@ -85,6 +82,105 @@ const exportJSON = (scenes, title) => {
   a.click();
 };
 
+const exportPDF = async (scenes, title) => {
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+  document.head.appendChild(script);
+  await new Promise(resolve => script.onload = resolve);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = 297; const pageH = 210; const margin = 12;
+  const colW = (pageW - margin * 2 - 10) / 2;
+  doc.setFillColor(13, 13, 15);
+  doc.rect(0, 0, pageW, pageH, "F");
+  doc.setTextColor(212, 160, 23);
+  doc.setFontSize(22); doc.setFont("helvetica", "bold");
+  doc.text("FRAMEFORGE — " + (title || "Storyboard"), margin, 20);
+  doc.setTextColor(138, 122, 90); doc.setFontSize(10); doc.setFont("helvetica", "normal");
+  doc.text("AI Storyboard Studio  ·  " + scenes.length + " Scenes", margin, 28);
+  doc.setDrawColor(212, 160, 23); doc.setLineWidth(0.5);
+  doc.line(margin, 31, pageW - margin, 31);
+  let x = margin; let y = 38; const cardH = 70; const cardGap = 6; let cardCount = 0;
+  scenes.forEach((scene) => {
+    if (cardCount > 0 && cardCount % 2 === 0) { x = margin; y += cardH + cardGap; }
+    if (y + cardH > pageH - margin) {
+      doc.addPage(); doc.setFillColor(13, 13, 15); doc.rect(0, 0, pageW, pageH, "F");
+      x = margin; y = margin + 10; cardCount = 0;
+    }
+    doc.setFillColor(26, 26, 36); doc.setDrawColor(42, 42, 58); doc.setLineWidth(0.3);
+    doc.roundedRect(x, y, colW, cardH, 3, 3, "FD");
+    doc.setFillColor(20, 20, 30); doc.roundedRect(x + 3, y + 8, colW - 6, 28, 2, 2, "F");
+    doc.setTextColor(212, 160, 23); doc.setFontSize(8); doc.setFont("helvetica", "bold");
+    doc.text("SCENE #" + scene.sceneNumber, x + 4, y + 6);
+    doc.setTextColor(180, 170, 150); doc.setFontSize(7); doc.setFont("helvetica", "normal");
+    const descLines = doc.splitTextToSize(scene.description || "", colW - 10);
+    doc.text(descLines.slice(0, 3), x + 5, y + 15);
+    doc.setTextColor(212, 160, 23); doc.setFontSize(9); doc.setFont("helvetica", "bold");
+    const titleLines = doc.splitTextToSize(scene.sceneTitle || "", colW - 8);
+    doc.text(titleLines[0], x + 4, y + 40);
+    doc.setTextColor(138, 122, 90); doc.setFontSize(7); doc.setFont("helvetica", "normal");
+    doc.text(scene.mood + "  ·  " + scene.duration + "  ·  " + scene.cameraAngle, x + 4, y + 46);
+    doc.text((scene.location || "") + "  ·  " + (scene.timeOfDay || ""), x + 4, y + 51);
+    if (scene.dialogue && scene.dialogue !== "No dialogue") {
+      doc.setTextColor(200, 190, 160); doc.setFontSize(7);
+      const dLines = doc.splitTextToSize('"' + scene.dialogue + '"', colW - 10);
+      doc.text(dLines.slice(0, 2), x + 4, y + 57);
+    }
+    doc.setTextColor(100, 100, 120); doc.setFontSize(6.5);
+    doc.text("Lighting: " + (scene.lighting || ""), x + 4, y + 64);
+    doc.text("Transition: " + (scene.transitionTo || ""), x + colW / 2, y + 64);
+    x += colW + 10; cardCount++;
+  });
+  doc.setTextColor(80, 80, 100); doc.setFontSize(7);
+  doc.text("Generated by FrameForge AI Storyboard Studio", margin, pageH - 5);
+  doc.save((title || "storyboard") + ".pdf");
+};
+
+const exportPNG = async (scenes, title) => {
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+  document.head.appendChild(script);
+  await new Promise(resolve => script.onload = resolve);
+  const container = document.createElement("div");
+  container.style.cssText = `width:1400px;background:#0d0d0f;padding:40px;font-family:Georgia,serif;position:fixed;top:-9999px;left:-9999px;`;
+  const header = document.createElement("div");
+  header.style.cssText = "margin-bottom:30px;border-bottom:2px solid #d4a017;padding-bottom:16px;";
+  header.innerHTML = `<div style="color:#d4a017;font-size:28px;font-weight:bold;font-family:monospace;letter-spacing:4px;">FRAMEFORGE</div><div style="color:#8a7a5a;font-size:14px;margin-top:4px;">${title || "Untitled Storyboard"}  ·  ${scenes.length} Scenes</div>`;
+  container.appendChild(header);
+  const grid = document.createElement("div");
+  grid.style.cssText = "display:grid;grid-template-columns:repeat(4,1fr);gap:16px;";
+  scenes.forEach(scene => {
+    const card = document.createElement("div");
+    card.style.cssText = `background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;overflow:hidden;padding:12px;`;
+    card.innerHTML = `
+      <div style="color:#d4a017;font-size:10px;font-family:monospace;margin-bottom:6px;">#${scene.sceneNumber}</div>
+      <div style="background:#0a0a0f;border:1px solid #2a2a3a;border-radius:6px;padding:10px;margin-bottom:10px;min-height:60px;">
+        <div style="color:#8a7a5a;font-size:9px;line-height:1.5;">${(scene.description || "").substring(0, 100)}...</div>
+        <div style="color:#d4a017;font-size:8px;margin-top:6px;text-align:right;">${scene.cameraAngle}</div>
+      </div>
+      <div style="color:#e8e0cc;font-size:12px;font-weight:bold;margin-bottom:5px;">${scene.sceneTitle}</div>
+      <div style="color:#8a7a5a;font-size:10px;margin-bottom:3px;">${scene.mood}  ·  ${scene.duration}</div>
+      <div style="color:#4a4a5a;font-size:10px;margin-bottom:5px;">${scene.location}  ·  ${scene.timeOfDay}</div>
+      ${scene.dialogue && scene.dialogue !== "No dialogue"
+        ? `<div style="color:#c8b878;font-size:9px;font-style:italic;border-left:2px solid #d4a017;padding-left:6px;margin-top:5px;">"${scene.dialogue.substring(0, 60)}${scene.dialogue.length > 60 ? "..." : ""}"</div>`
+        : ""}
+      <div style="color:#3a3a4a;font-size:9px;margin-top:6px;">${scene.lighting}  ·  → ${scene.transitionTo}</div>`;
+    grid.appendChild(card);
+  });
+  container.appendChild(grid);
+  const footer = document.createElement("div");
+  footer.style.cssText = "margin-top:24px;border-top:1px solid #2a2a3a;padding-top:10px;color:#3a3a5a;font-size:10px;";
+  footer.textContent = "Generated by FrameForge AI Storyboard Studio";
+  container.appendChild(footer);
+  document.body.appendChild(container);
+  const canvas = await window.html2canvas(container, { backgroundColor: "#0d0d0f", scale: 2, useCORS: true });
+  document.body.removeChild(container);
+  const link = document.createElement("a");
+  link.download = (title || "storyboard") + ".png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+};
+
 export default function StoryboardApp() {
   const [scenes, setScenes] = useState([]);
   const [selectedScene, setSelectedScene] = useState(null);
@@ -96,6 +192,9 @@ export default function StoryboardApp() {
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [projectTitle, setProjectTitle] = useState("");
   const [view, setView] = useState("board");
+  const [apiKey, setApiKey] = useState(
+    import.meta.env.VITE_GEMINI_KEY || ""
+  );
   const [form, setForm] = useState({
     title: "", genre: "", characters: "", setting: "",
     timeOfDay: "", story: "", dialogue: "",
@@ -104,6 +203,7 @@ export default function StoryboardApp() {
 
   const handleGenerate = async () => {
     if (!form.story.trim()) { setError("Please enter your story or script."); return; }
+    if (!apiKey.trim()) { setError("Please enter your Gemini API key."); return; }
     setLoading(true); setError(null); setScenes([]); setSelectedScene(null);
     const prompt = `STORY TITLE: ${form.title || "Untitled"}
 GENRE: ${form.genre || "Drama"}
@@ -120,14 +220,16 @@ DIALOGUE:
 ${form.dialogue || "See story above"}
 Generate a complete detailed storyboard. Be thorough and cinematic.`;
     try {
-      const result = await callClaude(prompt);
+      const result = await callGemini(prompt, apiKey);
       setScenes(result);
       setProjectTitle(form.title || "Untitled Storyboard");
       setActiveTab("board");
       if (result.length > 0) setSelectedScene(result[0]);
-    } catch(e) {
+    } catch (e) {
       setError(`Generation failed: ${e.message}`);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDragStart = (i) => setDragIdx(i);
@@ -137,8 +239,7 @@ Generate a complete detailed storyboard. Be thorough and cinematic.`;
     const arr = [...scenes];
     const [moved] = arr.splice(dragIdx, 1);
     arr.splice(i, 0, moved);
-    const renumbered = arr.map((s, idx) => ({ ...s, sceneNumber: idx + 1 }));
-    setScenes(renumbered);
+    setScenes(arr.map((s, idx) => ({ ...s, sceneNumber: idx + 1 })));
     setDragIdx(null); setDragOverIdx(null);
   };
 
@@ -163,7 +264,7 @@ Generate a complete detailed storyboard. Be thorough and cinematic.`;
       charactersPresent: [], characterPositions: "",
       dialogue: "No dialogue", emotion: "Neutral", mood: "Peaceful",
       lighting: "Natural", colorPalette: "", soundscape: "",
-      actionBeat: "", transitionTo: "Cut", directorNotes: "", framePrompt: ""
+      actionBeat: "", transitionTo: "Cut to", directorNotes: "", framePrompt: ""
     };
     setScenes(prev => [...prev, newScene]);
     setSelectedScene(newScene);
@@ -198,9 +299,9 @@ Generate a complete detailed storyboard. Be thorough and cinematic.`;
               <button style={styles.btnOutline} onClick={() => setView(v => v === "board" ? "timeline" : "board")}>
                 {view === "board" ? "Timeline" : "Board"}
               </button>
-              <button style={styles.btnGold} onClick={() => exportJSON(scenes, projectTitle)}>
-                Export JSON
-              </button>
+              <button style={styles.btnOutline} onClick={() => exportJSON(scenes, projectTitle)}>JSON</button>
+              <button style={styles.btnOutline} onClick={() => exportPNG(scenes, projectTitle)}>PNG</button>
+              <button style={styles.btnGold} onClick={() => exportPDF(scenes, projectTitle)}>PDF</button>
             </>
           )}
         </div>
@@ -211,9 +312,31 @@ Generate a complete detailed storyboard. Be thorough and cinematic.`;
           <div style={styles.inputPanel}>
             <div style={styles.panelHeader}>
               <h2 style={styles.panelTitle}>Story Details</h2>
-              <p style={styles.panelSub}>Fill in your story for the AI to analyze</p>
+              <p style={styles.panelSub}>Powered by Google Gemini AI</p>
             </div>
             <div style={styles.formScroll}>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>
+                  Gemini API Key
+                  <span style={{ color: "#4a4a5a", fontWeight: "normal", marginLeft: "6px", textTransform: "none", letterSpacing: 0 }}>
+                    (not saved anywhere)
+                  </span>
+                </label>
+                <input
+                  style={{ ...styles.input, fontFamily: "monospace", fontSize: "11px" }}
+                  type="password"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                />
+                <div style={styles.keyHint}>
+                  Get free key at aistudio.google.com/app/apikey
+                </div>
+              </div>
+
+              <div style={styles.divider} />
+
               <FormField label="Story Title" value={form.title} onChange={v => f("title", v)} placeholder="e.g. The Last Signal" />
               <FormSelect label="Genre" value={form.genre} options={GENRES} onChange={v => f("genre", v)} />
               <FormField label="Characters" value={form.characters} onChange={v => f("characters", v)} placeholder="e.g. Alex (30s, detective), Maya (20s, hacker)" multiline />
@@ -222,16 +345,20 @@ Generate a complete detailed storyboard. Be thorough and cinematic.`;
               <FormSelect label="Camera Style" value={form.cameraStyle} options={CAMERA_SHOTS} onChange={v => f("cameraStyle", v)} />
               <FormSelect label="Mood / Tone" value={form.mood} options={MOODS} onChange={v => f("mood", v)} />
               <FormSelect label="Lighting Style" value={form.lighting} options={LIGHTING} onChange={v => f("lighting", v)} />
+
               <div style={styles.divider} />
+
               <FormField label="Story / Script *" value={form.story} onChange={v => f("story", v)}
                 placeholder="Paste your full story or script here..." multiline rows={10} required />
               <FormField label="Additional Dialogue" value={form.dialogue} onChange={v => f("dialogue", v)}
                 placeholder="Key dialogue lines..." multiline rows={4} />
               <FormField label="Special Notes" value={form.specialNotes} onChange={v => f("specialNotes", v)}
                 placeholder="Director notes, references..." multiline />
+
               {error && <div style={styles.error}>{error}</div>}
+
               <button
-                style={{ ...styles.btnGold, width: "100%", fontSize: "16px", padding: "16px" }}
+                style={{ ...styles.btnGold, width: "100%", fontSize: "16px", padding: "16px", justifyContent: "center" }}
                 onClick={handleGenerate}
                 disabled={loading}>
                 {loading ? "Analyzing Story..." : "Generate Storyboard"}
@@ -497,8 +624,8 @@ function EmptyState({ onGo, loading }) {
       <h3 style={styles.emptyTitle}>{loading ? "Analyzing your story..." : "No Storyboard Yet"}</h3>
       <p style={styles.emptySub}>
         {loading
-          ? "The AI is breaking down scenes and crafting your storyboard."
-          : "Enter your story details and let the AI generate a cinematic storyboard."}
+          ? "Gemini AI is breaking down your story into cinematic scenes..."
+          : "Enter your story and Gemini AI will generate a complete professional storyboard."}
       </p>
       {!loading && <button style={styles.btnGold} onClick={onGo}>Start Writing</button>}
     </div>
@@ -536,7 +663,7 @@ const styles = {
   nav: { display: "flex", gap: "4px" },
   navBtn: { background: "transparent", border: "none", color: C.textDim, padding: "8px 18px", cursor: "pointer", fontSize: "13px", borderRadius: "6px" },
   navBtnActive: { background: C.card, color: C.gold, borderBottom: `2px solid ${C.gold}` },
-  headerRight: { display: "flex", gap: "10px", alignItems: "center" },
+  headerRight: { display: "flex", gap: "8px", alignItems: "center" },
   body: { display: "flex", flex: 1, overflow: "hidden" },
   inputPanel: { width: "340px", flexShrink: 0, background: C.panel, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" },
   panelHeader: { padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}` },
@@ -551,6 +678,7 @@ const styles = {
   select: { cursor: "pointer" },
   divider: { borderTop: `1px solid ${C.border}`, margin: "18px 0" },
   error: { background: "#3a1010", border: "1px solid #e74c3c", borderRadius: "6px", padding: "10px 14px", fontSize: "12px", color: "#e74c3c", marginBottom: "14px" },
+  keyHint: { fontSize: "10px", color: "#4a4a6a", marginTop: "5px", fontStyle: "italic" },
   boardPanel: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: C.bg },
   boardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 },
   projectTitle: { margin: 0, fontSize: "18px", color: C.gold },
